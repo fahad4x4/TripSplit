@@ -1,6 +1,6 @@
 <?php
 session_start();
-$password = 'morocco123'; // يمكنك تغييره لاحقاً
+$password = 'admin123'; // يمكنك تغييره لاحقاً
 
 if (isset($_POST['password'])) {
     if ($_POST['password'] === $password) {
