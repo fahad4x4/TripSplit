@@ -1,91 +1,52 @@
 <?php
 require __DIR__ . '/auth.php';
-
-$config = appConfig();
-$currency = $config['currency'];
-$exchange_rate = (float) $config['exchange_rate_to_sar'];
-$cur = h($currency);
+require __DIR__ . '/ui.php';
 
 $data = loadData();
 $contributions = $data['contributions'];
+$total = totalContributions($contributions);
+
+// مجموع كل عضو
+$perMember = [];
+foreach ($data['team'] as $m) $perMember[$m] = 0.0;
+foreach ($contributions as $c) {
+    $n = (string) ($c['name'] ?? '');
+    $perMember[$n] = ($perMember[$n] ?? 0) + (float) ($c['amount'] ?? 0);
+}
+arsort($perMember);
+$max = $perMember ? max($perMember) : 0;
+
+$addBtn = '<a class="btn btn-primary" href="manage.php#contribution">' . icon('plus') . 'تسجيل قطة</a>';
+pageStart('سجل القطة', 'contributions.php');
+pageTitle('سجل القطة', count($contributions) . ' مساهمة · المجموع ' . number_format($total, 2) . ' ' . appConfig()['currency'], $addBtn);
 ?>
-
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>سجل المساهمات - إدارة مصروفات الرحلة</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-    <link href="styles.css" rel="stylesheet">
-</head>
-<body>
-    <header class="header">
-        <div class="container text-center">
-            <div class="d-flex flex-column align-items-center gap-3">
-                <div class="logo-container">
-                    <img src="icons/icon-192x192.png" alt="شعار الرحلة" class="img-fluid">
-                </div>
-                <h1 class="display-6 fw-bold text-gradient">
-                    <i class="fas fa-hand-holding-usd me-2"></i>
-                    سجل المساهمات
-                </h1>
-                <a href="index.php" class="text-decoration-none" style="color: var(--accent-color);">
-                    <i class="fas fa-home me-2"></i> العودة للصفحة الرئيسية
-                </a>
-            </div>
-        </div>
-    </header>
-
-    <main class="container mt-4 mb-5">
-        <div class="card">
-            <div class="card-header bg-teal contributions text-white">
-                <i class="fas fa-hand-holding-usd me-2"></i>سجل دفعات القطة
-                <span class="badge bg-light text-dark float-start"><?= (int) count($contributions) ?> مساهمات</span>
-            </div>
-            <div class="card-body">
-                <?php if (!empty($contributions)): ?>
-                    <div class="row g-3">
-                        <?php foreach ($contributions as $contrib): ?>
-                        <div class="col-12 col-md-6">
-                            <div class="p-3 border rounded-3 shadow-sm d-flex flex-column gap-2 bg-light" style="background-color: #fef6fd;">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div class="fw-bold"><?= h($contrib['name'] ?? '') ?></div>
-                                    <div class="text-muted small"><?= h(safeDate($contrib['date'] ?? '')) ?></div>
-                                </div>
-                                <div class="d-flex justify-content-between align-items-end">
-                                    <div>
-                                        <span class="fw-bold"><?= number_format((float) $contrib['amount'], 2) ?> <?= $cur ?></span>
-                                        <div class="text-muted small">
-                                            ≈ <?= number_format((float) $contrib['amount'] * $exchange_rate, 2) ?>
-                                            <img src="https://alghathbar.com/trip/icons/Saudi_Riyal_Symbol.svg" alt="ريال سعودي" width="14">
-                                        </div>
-                                    </div>
-                                    <i class="fas fa-hand-holding-usd text-primary fa-lg"></i>
-                                </div>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="alert alert-warning">لا توجد مساهمات مسجلة</div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </main>
-
-    <footer class="text-center py-4 mt-5">
-        <div class="container">
-            <p class="mb-0">
-                تم تطوير النظام بواسطة 
-                <i class="fas fa-code"></i> أبو فيصل
-                © <?= date('Y') ?>
-            </p>
-        </div>
-    </footer>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+<?php if (empty($contributions)): ?>
+    <div class="card"><?= emptyState('لا توجد مساهمات في القطة', 'سجّل ما دفعه كل عضو في ' . KITTY . ' المشترك.', 'manage.php#contribution', 'تسجيل أول قطة', 'wallet') ?></div>
+<?php else: ?>
+<div class="grid grid-2">
+    <section class="card" aria-labelledby="per-member">
+        <div class="card-head"><h2 id="per-member"><?= icon('users') ?>مساهمة كل عضو</h2></div>
+        <ul class="bars">
+            <?php foreach ($perMember as $name => $amt): $pct = $max > 0 ? $amt / $max * 100 : 0; ?>
+            <li class="bar-row">
+                <div class="bar-top"><b><?= h($name) ?></b><span><?= money($amt, false) ?></span></div>
+                <div class="bar"><span style="width: <?= h(number_format($pct, 1, '.', '')) ?>%"></span></div>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+    </section>
+    <section aria-labelledby="all-contrib">
+        <h2 id="all-contrib" class="visually-hidden">كل الدفعات</h2>
+        <ul class="rows">
+            <?php foreach (array_reverse($contributions) as $c): ?>
+            <li class="row">
+                <div class="row-main"><span class="avatar" aria-hidden="true" style="width:32px;height:32px"><?= h(initial((string) ($c['name'] ?? ''))) ?></span><b><?= h($c['name'] ?? '') ?></b></div>
+                <div class="row-amt"><?= money((float) $c['amount']) ?><?= sar((float) $c['amount']) ?></div>
+                <div class="row-sub"><bdi dir="ltr"><?= h(safeDate($c['date'] ?? '', 'd/m/Y')) ?></bdi></div>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+    </section>
+</div>
+<?php endif; ?>
+<?php pageEnd(); ?>

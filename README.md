@@ -9,6 +9,7 @@ A lightweight PHP web app for splitting group‑trip expenses fairly. It support
 ## Contents
 
 - [Overview](#overview)
+- [Screenshots / لقطات](#screenshots--لقطات)
 - [Features](#features)
 - [How the calculation works](#how-the-calculation-works)
 - [Requirements](#requirements)
@@ -24,6 +25,16 @@ A lightweight PHP web app for splitting group‑trip expenses fairly. It support
 
 Members put money into a shared kitty (**الصندوق**), and expenses are paid either from the kitty or by a member personally. Each expense is split equally among the members who took part in it. TripSplit keeps a running balance per member and for the kitty, then recommends the settlements that close every balance.
 
+## Screenshots / لقطات
+
+<p align="center">
+  <img src="docs/screenshots/dashboard-mobile.png" alt="TripSplit dashboard on mobile (390px): totals, who pays whom, member balances" width="300">
+  &nbsp;
+  <img src="docs/screenshots/dashboard-desktop.png" alt="TripSplit dashboard on desktop (1280px)" width="520">
+</p>
+
+Dashboard on mobile and desktop: trip totals, a clear **who pays whom** card, member balances, and spending by category. Light and dark themes, bottom navigation on phones.
+
 ## Features
 
 - Team management: add, rename (updates every record), and safely delete members.
@@ -36,6 +47,7 @@ Members put money into a shared kitty (**الصندوق**), and expenses are pai
 - PDF exports (full trip report and daily report) via TCPDF.
 - Approximate conversion to Saudi riyals using a configurable rate.
 - Password login, CSRF protection, protected data folder, automatic backups.
+- Mobile‑first Arabic (RTL) interface: one shared layout and navigation, light/dark theme, accessible forms with inline validation, WCAG AA colour contrast, 44px tap targets. No front‑end frameworks or CDNs: plain CSS, a few lines of JS, and the Tajawal font self‑hosted.
 
 ## How the calculation works
 
@@ -157,7 +169,7 @@ TripSplit/
 ├── save.php                  POST endpoint for manage.php (CSRF-protected)
 ├── reset.php                 POST-only reset with backup (CSRF-protected)
 ├── login.php / logout.php    Authentication
-├── Chart.php                 Statistics, charts, settlements tab
+├── Chart.php                 Statistics: member table, category and daily bars, settlements
 ├── expenses.php              Expense log
 ├── contributions.php         Contribution log
 ├── daily_expenses.php        Daily breakdown
@@ -169,7 +181,9 @@ TripSplit/
 ├── config.php                Public settings (currency, exchange rate, …)
 ├── config.local.example.php  Template for the private config (password hash)
 ├── composer.json / .lock     PHP dependencies (TCPDF)
-├── styles.css                Styles
+├── ui.php                    Shared layout: header, navigation, footer, money formatting, icons
+├── assets/                   app.css, app.js, favicon.svg, fonts/ (Tajawal, OFL)
+├── docs/screenshots/         README screenshots
 ├── .htaccess                 Blocks sensitive root files on Apache
 ├── data/
 │   ├── .htaccess             Deny all web access
@@ -238,6 +252,9 @@ Released under the [MIT License](LICENSE). Copyright © 2026 Fahad ALGhathbar (�
 - تصدير PDF (التقرير الكامل والتقرير اليومي) عبر مكتبة TCPDF.
 - عرض المبلغ التقريبي بالريال السعودي حسب سعر صرف قابل للتعديل.
 - تسجيل دخول بكلمة مرور، وحماية CSRF، ومجلد بيانات محمي، ونسخ احتياطي تلقائي.
+- واجهة عربية متجاوبة للجوال أولاً: تصميم وتنقل موحّد، وضع ليلي، نماذج واضحة مع رسائل تحقق، تباين ألوان WCAG AA. بدون مكتبات أو CDN: CSS عادي وسطور JavaScript قليلة وخط Tajawal مستضاف محلياً.
+
+لقطات الشاشة: انظر [Screenshots / لقطات](#screenshots--لقطات).
 
 ## كيف تتم الحسابات
 

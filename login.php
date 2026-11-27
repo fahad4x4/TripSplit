@@ -47,84 +47,41 @@ if ($lockedUntil > time()) {
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>تسجيل الدخول</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body {
-            background: linear-gradient(to bottom right, #00c6ff, #0072ff);
-            font-family: 'Tajawal', Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .login-container {
-            background: white;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            width: 300px;
-            text-align: center;
-        }
-        h2 {
-            margin-bottom: 20px;
-            color: #333;
-        }
-        input[type="password"], input[type="submit"] {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            font-size: 16px;
-        }
-        input[type="submit"] {
-            background-color: #0072ff;
-            color: white;
-            border: none;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        input[type="submit"]:hover {
-            background-color: #005bb5;
-        }
-        .setup {
-            background: #fff8e1;
-            border: 1px solid #f2a950;
-            border-radius: 8px;
-            padding: 12px;
-            font-size: 14px;
-            line-height: 1.8;
-            color: #5d4300;
-            text-align: right;
-        }
-        .setup code { background: #f5f5f5; padding: 1px 4px; border-radius: 4px; }
-        .error {
-            color: red;
-            margin-bottom: 10px;
-            font-size: 14px;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#1f4e79">
+    <title>تسجيل الدخول · TripSplit</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/app.css">
 </head>
-<body>
-    <div class="login-container">
-        <h2>تسجيل الدخول</h2>
+<body class="login">
+    <main class="login-card">
+        <img class="logo" src="assets/favicon.svg" alt="" width="56" height="56">
+        <h1>TripSplit</h1>
+        <p class="sub">مصروفات الرحلة، مقسّمة بالعدل</p>
         <?php if (!$configured): ?>
-            <div class="setup">
-                <strong>التطبيق غير مهيأ بعد.</strong><br>
-                أنشئ ملف <code>config.local.php</code> يحتوي <code>password_hash</code>
-                (انسخ <code>config.local.example.php</code> ثم ولّد الـ hash بالأمر
-                <code dir="ltr">php tools/hash-password.php</code>).
+            <div class="alert warn" role="alert">
+                <div>
+                    <strong>التطبيق غير مهيأ بعد.</strong><br>
+                    أنشئ ملف <code>config.local.php</code> يحتوي <code>password_hash</code>
+                    (انسخ <code>config.local.example.php</code> ثم ولّد الـ hash بالأمر
+                    <code dir="ltr">php tools/hash-password.php</code>).
+                </div>
             </div>
         <?php else: ?>
-            <?php if ($error !== null): ?><div class="error"><?= h($error) ?></div><?php endif; ?>
             <form method="post" autocomplete="off">
                 <?= csrfField() ?>
-                <input type="password" name="password" placeholder="كلمة المرور" required autofocus>
-                <input type="submit" value="دخول">
+                <div class="field">
+                    <label for="password">كلمة المرور</label>
+                    <input class="input" type="password" id="password" name="password" required autofocus
+                           autocomplete="current-password"<?= $error !== null ? ' aria-invalid="true" aria-describedby="login-error"' : '' ?>>
+                </div>
+                <?php if ($error !== null): ?>
+                    <div class="form-msg err" id="login-error" role="alert"><?= h($error) ?></div>
+                <?php endif; ?>
+                <button type="submit" class="btn btn-primary btn-block" style="margin-top:16px">دخول</button>
             </form>
         <?php endif; ?>
-    </div>
+    </main>
 </body>
 </html>
