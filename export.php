@@ -1,29 +1,23 @@
 <?php
-// عرض الأخطاء
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
+require __DIR__ . '/auth.php';
+requirePdfLibrary();
 
-ob_clean();
-ob_start();
-
-// تحميل المكتبات والملفات
-require_once __DIR__ . '/vendor/tecnickcom/tcpdf/tcpdf.php';
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/functions.php';
-
-// تهيئة الكائنات والبيانات
 function formatAmount($amount) {
-    return number_format($amount, 2, '.', ',');
+    return number_format((float) $amount, 2, '.', ',');
 }
 
-$config = require 'config.php';
-$data = json_decode(file_get_contents($config['data_file']), true);
-$team = $data['team'] ?? [];
-$expenses = $data['expenses'] ?? [];
-$contributions = $data['contributions'] ?? [];
+$config = appConfig();
+$data = loadData();
+$team = $data['team'];
+$expenses = $data['expenses'];
+$contributions = $data['contributions'];
 $total = totalExpenses($expenses);
+$kitty = kittyBalance($expenses, $contributions);
 $balances = calculateBalances($team, $expenses, $contributions);
-$transactions = recommendSettlements($balances);
+$settlement = computeSettlement($balances);
+$transactions = $settlement['transactions'];
+
+ob_start();
 
 // إنشاء كائن TCPDF
 $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
@@ -38,13 +32,13 @@ function createTable($pdf, $headers, $rows, $fillColor = [224, 224, 224]) {
     $html = '<table border="0.5" cellpadding="6">';
     $html .= '<thead><tr style="background-color:#f5f5f5;">';
     foreach ($headers as $header) {
-        $html .= '<th>' . htmlspecialchars($header) . '</th>';
+        $html .= '<th>' . h($header) . '</th>';
     }
     $html .= '</tr></thead><tbody>';
     foreach ($rows as $row) {
         $html .= '<tr>';
         foreach ($row as $cell) {
-            $html .= '<td>' . htmlspecialchars($cell) . '</td>';
+            $html .= '<td>' . h($cell) . '</td>';
         }
         $html .= '</tr>';
     }
@@ -77,10 +71,10 @@ $pdf->Ln(0);
 $expenseRows = [];
 foreach ($expenses as $e) {
     $expenseRows[] = [
-        $e['paid_by'],
+        payerLabel($e),
         formatAmount($e['amount']) . ' ' . $config['currency'],
-        $e['note'],
-        date('d/m/Y', strtotime($e['date']))
+        (string) ($e['note'] ?? ''),
+        safeDate($e['date'] ?? '', 'd/m/Y')
     ];
 }
 createTable($pdf, ['الدافع', 'المبلغ', 'نوع المصروف', 'التاريخ'], $expenseRows);
@@ -95,9 +89,9 @@ $pdf->Ln(0);
 $contributionRows = [];
 foreach ($contributions as $c) {
     $contributionRows[] = [
-        $c['name'],
+        (string) ($c['name'] ?? ''),
         formatAmount($c['amount']) . ' ' . $config['currency'],
-        date('d/m/Y', strtotime($c['date']))
+        safeDate($c['date'] ?? '', 'd/m/Y')
     ];
 }
 createTable($pdf, ['الاسم', 'المبلغ', 'التاريخ'], $contributionRows);
@@ -118,7 +112,12 @@ foreach ($balances as $name => $b) {
         formatAmount($sar)
     ];
 }
-createTable($pdf, ['الاسم', 'الرصيد (بالدرهم)', 'الرصيد بالريال'], $balanceRows);
+createTable($pdf, ['الاسم', 'الرصيد (' . $config['currency'] . ')', 'الرصيد بالريال'], $balanceRows);
+createTable($pdf, ['رصيد ' . KITTY . ' (' . $config['currency'] . ')', 'المساهمات', 'المصروف منه'], [[
+    formatAmount($kitty['balance']),
+    formatAmount($kitty['contributions']),
+    formatAmount($kitty['spent']),
+]]);
 $pdf->Ln(0);
 
 // التحويلات المطلوبة
@@ -140,6 +139,12 @@ if (!empty($transactions)) {
 } else {
     $transactionRows[] = ['لا توجد تحويلات مطلوبة', '', ''];
 }
+foreach ($settlement['kitty_refunds'] as $n => $amt) {
+    $transactionRows[] = [KITTY . ' (فائض)', $n, formatAmount($amt) . ' ' . $config['currency']];
+}
+foreach ($settlement['kitty_dues'] as $n => $amt) {
+    $transactionRows[] = [$n, KITTY . ' (عجز)', formatAmount($amt) . ' ' . $config['currency']];
+}
 createTable($pdf, ['من', 'إلى', 'المبلغ'], $transactionRows);
 
 // ختام التقرير
@@ -153,4 +158,3 @@ $pdf->Cell(0, 10, 'مع تحيات - ' . $config['admin_name'], 0, 1, 'C');
 ob_end_clean();
 $pdf->Output('trip_report_optimized.pdf', 'I');
 exit;
-?>

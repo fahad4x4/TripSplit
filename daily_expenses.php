@@ -1,36 +1,12 @@
 <?php
-// تحميل الإعدادات والبيانات
-$config = require 'config.php';
-$data = json_decode(file_get_contents($config['data_file']), true);
+require __DIR__ . '/auth.php';
 
-$expenses = $data['expenses'] ?? [];
+$config = appConfig();
+$cur = h($config['currency']);
+$rate = (float) $config['exchange_rate_to_sar'];
 
-// دالة حساب المصروفات اليومية مع التفصيل
-function dailyExpensesWithDetails(array $expenses): array {
-    $daily = [];
-    foreach ($expenses as $exp) {
-        $date = date('Y-m-d', strtotime($exp['date']));
-        $type = $exp['note'];
-        $amount = $exp['amount'];
-        if (!isset($daily[$date])) {
-            $daily[$date] = [
-                'total' => 0,
-                'details' => []
-            ];
-        }
-        // تحديث المجموع الكلي
-        $daily[$date]['total'] += $amount;
-        // تحديث التفاصيل حسب النوع
-        if (!isset($daily[$date]['details'][$type])) {
-            $daily[$date]['details'][$type] = 0;
-        }
-        $daily[$date]['details'][$type] += $amount;
-    }
-    ksort($daily); // ترتيب حسب التاريخ
-    return $daily;
-}
-
-$daily_expenses = dailyExpensesWithDetails($expenses);
+$data = loadData();
+$daily_expenses = dailyExpensesWithDetails($data['expenses']);
 
 // تحويل القيمة إلى ريال سعودي
 function toSAR(float $amount, float $rate): string {
@@ -127,20 +103,20 @@ function toSAR(float $amount, float $rate): string {
             </div>
             <div class="card-body p-4">
                 <?php if (!empty($daily_expenses)): ?>
-                    <?php foreach ($daily_expenses as $date => $data): ?>
+                    <?php foreach ($daily_expenses as $date => $day): ?>
                         <div class="day-section mb-4">
                             <!-- تاريخ اليوم -->
                             <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-2">
                                 <div class="d-flex align-items-center gap-2">
                                     <i class="las la-calendar-day text-primary"></i>
-                                    <span class="fw-bold"><?= $date ?></span>
+                                    <span class="fw-bold"><?= h($date) ?></span>
                                 </div>
                                 <div class="total-amount">
                                     <span class="badge bg-primary fs-6">
-                                        <?= number_format($data['total'], 2) ?> <?= $config['currency'] ?>
+                                        <?= number_format($day['total'], 2) ?> <?= $cur ?>
                                     </span>
                                     <small class="text-muted ms-2">
-                                        ≈ <?= toSAR($data['total'], $config['exchange_rate_to_sar']) ?> SAR
+                                        ≈ <?= toSAR($day['total'], $rate) ?> SAR
                                     </small>
                                 </div>
                             </div>
@@ -155,18 +131,18 @@ function toSAR(float $amount, float $rate): string {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <?php foreach ($data['details'] as $type => $amount): ?>
+                                        <?php foreach ($day['details'] as $type => $amount): ?>
                                             <tr>
                                                 <td>
                                                     <i class="las la-caret-left text-muted"></i>
-                                                    <?= htmlspecialchars($type) ?>
+                                                    <?= h($type) ?>
                                                 </td>
                                                 <td>
                                                     <?= number_format($amount, 2) ?> 
-                                                    <?= $config['currency'] ?>
+                                                    <?= $cur ?>
                                                 </td>
                                                 <td class="text-success">
-                                                    <?= toSAR($amount, $config['exchange_rate_to_sar']) ?> SAR
+                                                    <?= toSAR($amount, $rate) ?> SAR
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>

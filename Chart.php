@@ -1,47 +1,24 @@
 <?php
-$config = require 'config.php';
+require __DIR__ . '/auth.php';
 
+$config = appConfig();
 $currency = $config['currency'];
-$exchange_rate = $config['exchange_rate_to_sar'];
+$exchange_rate = (float) $config['exchange_rate_to_sar'];
+$cur = h($currency);
 
-$data = json_decode(file_get_contents($config['data_file']), true);
+$data = loadData();
+$team = $data['team'];
+$expenses = $data['expenses'];
+$contributions = $data['contributions'];
 
-$team = $data['team'] ?? [];
-$expenses = $data['expenses'] ?? [];
-$contributions = $data['contributions'] ?? [];
-
-// حساب الرصيد لكل شخص
-function calculateBalances($team, $expenses, $contributions) {
-    $balances = [];
-    foreach ($team as $name) {
-        $contributed = array_sum(array_column(array_filter($contributions, fn($c) => $c['name'] === $name), 'amount'));
-        $share = 0;
-        foreach ($expenses as $exp) {
-            $participants = $exp['participants'] ?? $team;
-            if (in_array($name, $participants)) {
-                $share += $exp['amount'] / max(1, count($participants));
-            }
-        }
-        $net = $contributed - $share;
-        $balances[$name] = [
-            'contributed' => round($contributed, 2),
-            'share' => round($share, 2),
-            'net' => round($net, 2)
-        ];
-    }
-    return $balances;
-}
-
+// الحسابات من functions.php (المصدر الوحيد)
 $balances = calculateBalances($team, $expenses, $contributions);
+$settlement = computeSettlement($balances);
+$transactions = $settlement['transactions'];
+$kitty = kittyBalance($expenses, $contributions);
 
-// إجمالي المساهمات
-$total_contributions = array_sum(array_column($contributions, 'amount'));
-
-// إجمالي المصروفات
-$total_expenses = array_sum(array_column($balances, 'share'));
-
-// الفرق
-$diff = $total_contributions - $total_expenses;
+$total_contributions = totalContributions($contributions);
+$total_expenses = totalExpenses($expenses);
 
 // تحويل القيمة إلى ريال سعودي
 function toSAR(float $amount, float $rate): string {
@@ -53,23 +30,14 @@ function sarIcon(): string {
     return '<img src="https://alghathbar.com/trip/icons/Saudi_Riyal_Symbol.svg" width="14" alt="SAR">';
 }
 
-// حساب إجمالي المصروفات اليومية للتايملاين
-$dateTotals = [];
-foreach ($expenses as $exp) {
-    $date = date('Y-m-d', strtotime($exp['date']));
-    if (!isset($dateTotals[$date])) {
-        $dateTotals[$date] = 0;
-    }
-    $dateTotals[$date] += $exp['amount'];
-}
-ksort($dateTotals);
+// إجمالي المصروفات اليومية للتايملاين
+$dateTotals = dailyExpenses($expenses);
 
 // توزيع المصروفات حسب الفئة للفطيرة
 $categoryCounts = [];
 foreach ($expenses as $exp) {
-    $cat = $exp['note'] ?? 'اخرى';
-    if (!isset($categoryCounts[$cat])) $categoryCounts[$cat] = 0;
-    $categoryCounts[$cat]++;
+    $cat = (string) ($exp['note'] ?? 'اخرى');
+    $categoryCounts[$cat] = ($categoryCounts[$cat] ?? 0) + 1;
 }
 ?>
 <!DOCTYPE html>
@@ -129,7 +97,8 @@ foreach ($expenses as $exp) {
                     <i class="bi bi-cash-stack fs-2"></i>
                 </div>
                 <div class="card-body">
-                    <h3 class="mb-0"><?= number_format($total_contributions, 2) ?> <?= $currency ?></h3>
+                    <div class="text-muted small">مجموع القطة</div>
+                    <h3 class="mb-0"><?= number_format($total_contributions, 2) ?> <?= $cur ?></h3>
                     <div class="text-muted"><?= toSAR($total_contributions, $exchange_rate) ?> <?= sarIcon() ?></div>
                 </div>
             </div>
@@ -140,7 +109,8 @@ foreach ($expenses as $exp) {
                     <i class="bi bi-receipt fs-2"></i>
                 </div>
                 <div class="card-body">
-                    <h3 class="mb-0"><?= number_format($total_expenses, 2) ?> <?= $currency ?></h3>
+                    <div class="text-muted small">مجموع المصروفات</div>
+                    <h3 class="mb-0"><?= number_format($total_expenses, 2) ?> <?= $cur ?></h3>
                     <div class="text-muted"><?= toSAR($total_expenses, $exchange_rate) ?> <?= sarIcon() ?></div>
                 </div>
             </div>
@@ -151,8 +121,9 @@ foreach ($expenses as $exp) {
                     <i class="bi bi-calculator fs-2"></i>
                 </div>
                 <div class="card-body">
-                    <h3 class="mb-0"><?= number_format($diff, 2) ?> <?= $currency ?></h3>
-                    <div class="text-muted"><?= toSAR($diff, $exchange_rate) ?> <?= sarIcon() ?></div>
+                    <div class="text-muted small">رصيد <?= h(KITTY) ?></div>
+                    <h3 class="mb-0"><?= number_format($kitty['balance'], 2) ?> <?= $cur ?></h3>
+                    <div class="text-muted"><?= toSAR($kitty['balance'], $exchange_rate) ?> <?= sarIcon() ?></div>
                 </div>
             </div>
         </div>
@@ -162,7 +133,7 @@ foreach ($expenses as $exp) {
                     <i class="bi bi-people-fill fs-2"></i>
                 </div>
                 <div class="card-body">
-                    <h3 class="mb-0"><?= count($team) ?></h3>
+                    <h3 class="mb-0"><?= (int) count($team) ?></h3>
                     <div class="text-muted">عدد الأعضاء</div>
                 </div>
             </div>
@@ -189,21 +160,23 @@ foreach ($expenses as $exp) {
         <div class="tab-pane fade show active" id="members" role="tabpanel">
             <div class="card p-4">
                 <table class="table table-bordered">
-                    <thead><tr><th>العضو</th><th>المساهمة</th><th>الحصة</th><th>الرصيد</th></tr></thead>
+                    <thead><tr><th>العضو</th><th>المساهمة في القطة</th><th>دفع شخصياً</th><th>الحصة</th><th>الرصيد</th><th>الحالة</th></tr></thead>
                     <tbody>
                     <?php foreach ($team as $name):
-                        $member = $balances[$name] ?? ['contributed' => 0, 'share' => 0, 'net' => 0];
+                        $member = $balances[$name] ?? ['contributed' => 0, 'paid' => 0, 'share' => 0, 'net' => 0, 'status' => STATUS_BALANCED];
                         $color = $member['net'] >= 0 ? 'text-success' : 'text-danger';
                         $sar = toSAR($member['net'], $exchange_rate);
                     ?>
                         <tr>
                             <td><?= htmlspecialchars($name) ?></td>
                             <td><?= number_format($member['contributed'], 2) ?></td>
+                            <td><?= number_format($member['paid'], 2) ?></td>
                             <td><?= number_format($member['share'], 2) ?></td>
                             <td class="fw-bold <?= $color ?>">
                                 <?= number_format($member['net'], 2) ?>
                                 <br><small class="sar-equivalent"><?= $sar ?> <?= sarIcon() ?></small>
                             </td>
+                            <td><?= h($member['status']) ?></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -225,37 +198,7 @@ foreach ($expenses as $exp) {
         <!-- التسويات -->
         <div class="tab-pane fade" id="settlements" role="tabpanel">
             <div class="card p-4">
-                <?php
-                function recommendSettlements($balances) {
-                    $transactions = [];
-                    $surpluses = [];
-                    $deficits = [];
-                    foreach ($balances as $name => $info) {
-                        $net = $info['net'];
-                        if ($net > 0) {
-                            $surpluses[$name] = $net;
-                        } elseif ($net < 0) {
-                            $deficits[$name] = $net;
-                        }
-                    }
-                    foreach ($deficits as $debtor => $dNet) {
-                        foreach ($surpluses as $creditor => $cNet) {
-                            if ($dNet == 0) break;
-                            $pay = min(abs($dNet), $cNet);
-                            if ($pay > 0) {
-                                $transactions[] = [
-                                    'from' => $debtor,
-                                    'to' => $creditor,
-                                    'amount' => $pay
-                                ];
-                                $dNet += $pay;
-                                $surpluses[$creditor] -= $pay;
-                            }
-                        }
-                    }
-                    return $transactions;
-                }
-                $transactions = recommendSettlements($balances); ?>
+
                 <?php if (!empty($transactions)): ?>
                     <ul class="list-group">
                         <?php foreach ($transactions as $t):
@@ -264,14 +207,21 @@ foreach ($expenses as $exp) {
                         <li class="list-group-item d-flex justify-content-between">
                             <span><?= htmlspecialchars($t['from']) ?> <i class="bi bi-arrow-left-right"></i> <?= htmlspecialchars($t['to']) ?></span>
                             <span class="badge rounded-pill bg-primary">
-                                <?= number_format($t['amount'], 2) ?> <?= $currency ?> <br>
+                                <?= number_format($t['amount'], 2) ?> <?= $cur ?> <br>
                                 <small><?= $sar_amount ?> <?= sarIcon() ?></small>
                             </span>
                         </li>
                         <?php endforeach; ?>
                     </ul>
                 <?php else: ?>
-                    <p class="text-success">جميع الأرصدة متوازنة، لا توجد تسويات مطلوبة.</p>
+                    <p class="text-success">لا توجد تحويلات مطلوبة بين الأعضاء.</p>
+                <?php endif; ?>
+                <?php if ($kitty['balance'] > 0): ?>
+                    <p class="mt-3 mb-0 text-success">متبقٍ في <?= h(KITTY) ?>: <?= number_format($kitty['balance'], 2) ?> <?= $cur ?> يُعاد للمساهمين
+                        <?php foreach ($settlement['kitty_refunds'] as $n => $amt): ?>(<?= h($n) ?>: <?= number_format($amt, 2) ?>) <?php endforeach; ?></p>
+                <?php elseif ($kitty['balance'] < 0): ?>
+                    <p class="mt-3 mb-0 text-danger">عجز في <?= h(KITTY) ?>: <?= number_format(abs($kitty['balance']), 2) ?> <?= $cur ?>
+                        <?php foreach ($settlement['kitty_dues'] as $n => $amt): ?>(<?= h($n) ?>: <?= number_format($amt, 2) ?>) <?php endforeach; ?></p>
                 <?php endif; ?>
             </div>
         </div>
@@ -291,10 +241,10 @@ foreach ($expenses as $exp) {
     new Chart(categoryCtx, {
         type: 'pie',
         data: {
-            labels: <?= json_encode(array_keys($categoryCounts)) ?>,
+            labels: <?= js(array_keys($categoryCounts)) ?>,
             datasets: [{
                 label: 'المصروفات حسب الفئة',
-                data: <?= json_encode(array_values($categoryCounts)) ?>,
+                data: <?= js(array_values($categoryCounts)) ?>,
                 backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF','#F2A950','#20c997','#E74C3C','#6f42c1','#fd7e14','#d63384','#0dcaf0']
             }]
         },
@@ -314,10 +264,10 @@ document.getElementById('timeline-tab').addEventListener('shown.bs.tab', functio
     new Chart(timelineCtx, {
         type: 'line',
         data: {
-            labels: <?= json_encode(array_keys($dateTotals)) ?>,
+            labels: <?= js(array_keys($dateTotals)) ?>,
             datasets: [{
                 label: 'المصروفات اليومية',
-                data: <?= json_encode(array_values($dateTotals)) ?>,
+                data: <?= js(array_values($dateTotals)) ?>,
                 borderColor: '#36A2EB',
                 backgroundColor: 'rgba(54, 162, 235, 0.2)',
                 tension: 0.3
@@ -338,7 +288,7 @@ document.getElementById('timeline-tab').addEventListener('shown.bs.tab', functio
         const element = document.getElementById('content-to-export');
         const opt = {
             margin:       0.5,
-            filename:     'تقرير_الاحصائيات_<?php echo date("Y-m-d"); ?>.pdf',
+            filename:     <?= js('تقرير_الاحصائيات_' . date('Y-m-d') . '.pdf') ?>,
             image:        { type: 'jpeg', quality: 0.98 },
             html2canvas:  { scale: 2 },
             jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }

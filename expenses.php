@@ -1,17 +1,14 @@
 <?php
-session_start();
-if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-    header('Location: login.php');
-    exit();
-}
+require __DIR__ . '/auth.php';
 
-require_once 'functions.php';
-$config = require 'config.php';
+$config = appConfig();
 $currency = $config['currency'];
-$exchange_rate = $config['exchange_rate_to_sar'];
+$exchange_rate = (float) $config['exchange_rate_to_sar'];
+$cur = h($currency);
 
-$data = json_decode(file_get_contents($config['data_file']), true);
-$expenses = $data['expenses'] ?? [];
+$data = loadData();
+$team = $data['team'];
+$expenses = $data['expenses'];
 
 /**
  * دالة لإرجاع كلاس اللون المناسب للفئة
@@ -81,7 +78,7 @@ function expenseBadgeClass($note) {
                 <div class="card-header expenses d-flex align-items-center justify-content-between flex-wrap">
                     <div>
                         <i class="fas fa-receipt me-2"></i>سجل المصروفات
-                        <span class="badge bg-light text-dark"><?= count($expenses) ?> مصروفات</span>
+                        <span class="badge bg-light text-dark"><?= (int) count($expenses) ?> مصروفات</span>
                     </div>
                     <a href="manage.php" class="btn btn-outline-primary btn-sm ms-2">
                         <i class="fas fa-plus"></i> إضافة مصروف جديد
@@ -94,16 +91,18 @@ function expenseBadgeClass($note) {
                             <div class="col-12 col-md-6">
                                 <div class="p-3 border rounded-3 shadow-sm d-flex flex-column gap-2" style="background-color: #fdfaf5;">
                                     <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                                        <span class="badge <?= expenseBadgeClass($exp['note']) ?>"><?= htmlspecialchars($exp['note']) ?></span>
-                                        <div class="text-muted small"><?= date('d/m/Y', strtotime($exp['date'])) ?></div>
+                                        <span class="badge <?= expenseBadgeClass($exp['note'] ?? '') ?>"><?= h($exp['note'] ?? '') ?></span>
+                                        <div class="text-muted small"><?= h(safeDate($exp['date'] ?? '', 'd/m/Y')) ?></div>
                                     </div>
                                     <!-- عرض المشاركين -->
-                                    <?php if (!empty($exp['participants'])): ?>
+                                    <?php $parts = expenseParticipants($exp, $team); $payer = (string) ($exp['paid_by'] ?? ''); $personal = expenseSource($exp) === 'personal'; ?>
+                                    <?php if (!empty($parts)): ?>
                                         <div class="d-flex flex-wrap gap-2 small">
-                                            <?php foreach ($exp['participants'] as $participant): ?>
-                                                <span class="badge <?= $participant == $exp['paid_by'] ? 'payer-badge' : 'bg-secondary' ?>">
-                                                    <?= htmlspecialchars($participant) ?>
-                                                    <?php if ($participant == $exp['paid_by']): ?>
+                                            <?php foreach ($parts as $participant): ?>
+                                                <?php $isPayer = $personal && $participant === $payer; ?>
+                                                <span class="badge <?= $isPayer ? 'payer-badge' : 'bg-secondary' ?>">
+                                                    <?= h($participant) ?>
+                                                    <?php if ($isPayer): ?>
                                                         <i class="fas fa-crown ms-1" title="الدافع"></i>
                                                     <?php endif; ?>
                                                 </span>
@@ -112,14 +111,14 @@ function expenseBadgeClass($note) {
                                     <?php endif; ?>
                                     <div class="d-flex justify-content-between align-items-end mt-2 flex-wrap gap-2">
                                         <div>
-                                            <div class="fw-bold"><?= number_format($exp['amount'], 2) ?> <?= $currency ?></div>
+                                            <div class="fw-bold"><?= number_format((float) $exp['amount'], 2) ?> <?= $cur ?></div>
                                             <div class="text-muted small">
-                                                ≈ <?= number_format($exp['amount'] * $exchange_rate, 2) ?>
+                                                ≈ <?= number_format((float) $exp['amount'] * $exchange_rate, 2) ?>
                                                 <img src="https://alghathbar.com/trip/icons/Saudi_Riyal_Symbol.svg" alt="ريال سعودي" width="14">
                                             </div>
                                         </div>
                                         <div class="text-muted small">
-                                            دفعها: <span class="fw-bold"><?= htmlspecialchars($exp['paid_by']) ?></span>
+                                            دفعها: <span class="fw-bold"><?= h(payerLabel($exp)) ?></span>
                                         </div>
                                     </div>
                                 </div>

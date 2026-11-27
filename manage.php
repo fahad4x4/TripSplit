@@ -1,26 +1,9 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
+require __DIR__ . '/auth.php';
 
-$config = require 'config.php';
-require_once 'functions.php';
-
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-    header('Location: login.php');
-    exit();
-}
-
-$data = [];
-if (file_exists($config['data_file'])) {
-    $json = file_get_contents($config['data_file']);
-    $data = json_decode($json, true) ?? [];
-}
-
-$team = $data['team'] ?? [];
+$data = loadData();
+$team = $data['team'];
+$today = date('Y-m-d');
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -52,31 +35,53 @@ $team = $data['team'] ?? [];
         <button id="dark-mode-toggle" class="btn btn-dark btn-sm">
             <i class="fas fa-moon"></i> الوضع الليلي
         </button>
+        <form method="post" action="logout.php" class="d-inline">
+            <?= csrfField() ?>
+            <button type="submit" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-sign-out-alt"></i> خروج
+            </button>
+        </form>
     </div>
 </header>
 <main>
 <?php
+$payerOptions = array_merge([KITTY => KITTY . ' (القطة المشتركة)'], array_combine($team, $team) ?: []);
 $forms = [
     'formMember' => [
         'title' => '➕ إضافة عضو',
         'cardHeaderClass' => 'bg-purple',
         'hiddenType' => 'team',
         'inputs' => [
-            ['type' => 'text', 'name' => 'name', 'placeholder' => 'اسم العضو']
+            ['type' => 'text', 'name' => 'name', 'placeholder' => 'اسم العضو', 'maxlength' => 50]
         ],
         'button' => '✔️ إضافة',
         'icon' => 'fa-user-plus'
+    ],
+    'formEdit' => [
+        'title' => '✏️ تعديل اسم عضو',
+        'cardHeaderClass' => 'bg-info',
+        'hiddenType' => 'edit_member',
+        'hint' => 'يتم تحديث الاسم في الفريق والمصروفات والمشاركين والمساهمات.',
+        'inputs' => [
+            ['type' => 'select', 'name' => 'old_name', 'options' => array_combine($team, $team) ?: [], 'placeholder' => '-- اختر العضو --'],
+            ['type' => 'text', 'name' => 'new_name', 'placeholder' => 'الاسم الجديد', 'maxlength' => 50]
+        ],
+        'button' => '✔️ حفظ الاسم',
+        'icon' => 'fa-user-edit'
     ],
     'formExpense' => [
         'title' => '💵 تسجيل مصروف',
         'cardHeaderClass' => 'bg-orange',
         'hiddenType' => 'expense',
+        'hint' => 'اختر "' . KITTY . '" إذا دُفع المصروف من القطة، أو اسم العضو إذا دفعه من جيبه.',
         'inputs' => [
-            ['type' => 'select', 'name' => 'paid_by', 'options' => $team, 'placeholder' => '-- اختر الدافع --'],
+            ['type' => 'select', 'name' => 'paid_by', 'options' => $payerOptions, 'placeholder' => '-- اختر الدافع --'],
             ['type' => 'number', 'name' => 'amount', 'placeholder' => 'المبلغ'],
-             ['type' => 'select', 'name' => 'note', 'options' => ['سكن', 'طعام', 'مواصلات', 'تذاكر طيران', 'تأمين سفر', 'تأجير سيارات', 'تذاكر دخول', 'وقود', 'هايبر ماركت', 'اخرى'], 'placeholder' => '-- اختر نوع المصروف --'],
-            ['type' => 'multiselect', 'name' => 'participants', 'options' => $team, 'placeholder' => 'اختر المشاركين'],
-            ['type' => 'date', 'name' => 'date', 'placeholder' => 'اختر التاريخ']
+            ['type' => 'select', 'name' => 'note', 'options' => array_combine(
+                $cats = ['سكن', 'طعام', 'مواصلات', 'تذاكر طيران', 'تأمين سفر', 'تأجير سيارات', 'تذاكر دخول', 'وقود', 'هايبر ماركت', 'اخرى'], $cats
+            ), 'placeholder' => '-- اختر نوع المصروف --'],
+            ['type' => 'multiselect', 'name' => 'participants', 'options' => array_combine($team, $team) ?: [], 'placeholder' => 'اختر المشاركين (بدون اختيار = كل الفريق)'],
+            ['type' => 'date', 'name' => 'date', 'placeholder' => 'اختر التاريخ', 'value' => $today]
         ],
         'button' => '✔️ تسجيل',
         'icon' => 'fa-money-bill-wave'
@@ -86,20 +91,21 @@ $forms = [
         'cardHeaderClass' => 'bg-teal',
         'hiddenType' => 'contribution',
         'inputs' => [
-            ['type' => 'select', 'name' => 'name', 'options' => $team, 'placeholder' => '-- اختر المساهم --'],
+            ['type' => 'select', 'name' => 'name', 'options' => array_combine($team, $team) ?: [], 'placeholder' => '-- اختر المساهم --'],
             ['type' => 'number', 'name' => 'amount', 'placeholder' => 'أدخل مبلغ القطة'],
-             ['type' => 'date', 'name' => 'date', 'placeholder' => 'اختر التاريخ']
+            ['type' => 'date', 'name' => 'date', 'placeholder' => 'اختر التاريخ', 'value' => $today]
         ],
         'button' => '✔️ تسجيل القطة',
         'icon' => 'fa-coins'
     ],
-     'formDelete' => [
-        'title' => '🗑️ حذف بيانات',
+    'formDelete' => [
+        'title' => '🗑️ حذف عضو',
         'cardHeaderClass' => 'bg-danger',
         'hiddenType' => 'delete_member',
+        'hint' => 'لا يمكن حذف عضو له مساهمات أو مدفوعات. إذا كان مشاركاً في مصروفات، فعّل خيار إعادة التوزيع.',
         'inputs' => [
-            ['type' => 'select', 'name' => 'name', 'options' => $team, 'placeholder' => '-- اختر العضو --'],
-            ['type' => 'select', 'name' => 'delete_type', 'options' => ['name'=>'الاسم فقط','expenses'=>'المصروفات فقط','contributions'=>'المساهمات فقط','all'=>'الكل'], 'placeholder' => '-- ماذا تريد حذف؟ --']
+            ['type' => 'select', 'name' => 'name', 'options' => array_combine($team, $team) ?: [], 'placeholder' => '-- اختر العضو --'],
+            ['type' => 'checkbox', 'name' => 'redistribute', 'placeholder' => 'إعادة توزيع حصته على بقية المشاركين في كل مصروف']
         ],
         'button' => '🗑️ حذف',
         'icon' => 'fa-trash-alt'
@@ -107,42 +113,55 @@ $forms = [
 ];
 
 foreach ($forms as $formId => $formData) {
-    echo "<section class='mb-4'><div class='card'><div class='card-header {$formData['cardHeaderClass']} text-white'>
-            <i class='fas {$formData['icon']} me-2'></i> {$formData['title']}
+    echo "<section class='mb-4'><div class='card'><div class='card-header " . h($formData['cardHeaderClass']) . " text-white'>
+            <i class='fas " . h($formData['icon']) . " me-2'></i> " . h($formData['title']) . "
           </div>
-          <div class='card-body'>
-            <form id='$formId' autocomplete='off'>
-            <input type='hidden' name='type' value='{$formData['hiddenType']}'>";
+          <div class='card-body'>";
+    if (!empty($formData['hint'])) {
+        echo "<p class='text-muted small mb-3'>" . h($formData['hint']) . "</p>";
+    }
+    echo "<form id='" . h($formId) . "' autocomplete='off'>
+            " . csrfField() . "
+            <input type='hidden' name='type' value='" . h($formData['hiddenType']) . "'>";
     foreach ($formData['inputs'] as $input) {
+        $name = h($input['name']);
         echo "<div class='mb-3'>";
         if ($input['type'] == 'select') {
-            echo "<select name='{$input['name']}' class='form-select' required>
-                    <option disabled selected>{$input['placeholder']}</option>";
-            foreach ($input['options'] as $k => $v) {
-                $val = is_numeric($k) ? $v : $k;
-                $txt = is_numeric($k) ? $v : $v;
-                echo "<option value='" . htmlspecialchars($val) . "'>" . htmlspecialchars($txt) . "</option>";
+            echo "<select name='{$name}' class='form-select' required>
+                    <option value='' disabled selected>" . h($input['placeholder']) . "</option>";
+            foreach ($input['options'] as $val => $txt) {
+                echo "<option value='" . h($val) . "'>" . h($txt) . "</option>";
             }
             echo "</select>";
         } elseif ($input['type'] == 'multiselect') {
-            echo "<label class='form-label d-block'>{$input['placeholder']}</label>";
+            echo "<label class='form-label d-block'>" . h($input['placeholder']) . "</label>";
             echo "<div class='d-flex flex-wrap'>";
-            foreach ($input['options'] as $k => $v) {
-                $val = is_numeric($k) ? $v : $k;
-                $txt = is_numeric($k) ? $v : $v;
+            $i = 0;
+            foreach ($input['options'] as $val => $txt) {
+                $id = $name . '_' . $i++;
                 echo "<div class='form-check me-3'>
-                        <input class='form-check-input' type='checkbox' name='{$input['name']}[]' value='" . htmlspecialchars($val) . "' id='{$input['name']}_".htmlspecialchars($val)."'>
-                        <label class='form-check-label' for='{$input['name']}_".htmlspecialchars($val)."'>" . htmlspecialchars($txt) . "</label>
+                        <input class='form-check-input' type='checkbox' name='{$name}[]' value='" . h($val) . "' id='{$id}'>
+                        <label class='form-check-label' for='{$id}'>" . h($txt) . "</label>
                       </div>";
             }
             echo "</div>";
+        } elseif ($input['type'] == 'checkbox') {
+            $id = h($formId . '_' . $input['name']);
+            echo "<div class='form-check'>
+                    <input class='form-check-input' type='checkbox' name='{$name}' value='1' id='{$id}'>
+                    <label class='form-check-label' for='{$id}'>" . h($input['placeholder']) . "</label>
+                  </div>";
         } else {
-            echo "<input type='{$input['type']}' name='{$input['name']}' class='form-control' placeholder='{$input['placeholder']}' required>";
+            $extra = '';
+            if ($input['type'] === 'number') $extra .= " min='0.01' step='0.01'";
+            if (!empty($input['maxlength'])) $extra .= " maxlength='" . (int) $input['maxlength'] . "'";
+            if (isset($input['value'])) $extra .= " value='" . h($input['value']) . "'";
+            echo "<input type='" . h($input['type']) . "' name='{$name}' class='form-control' placeholder='" . h($input['placeholder']) . "'{$extra} required>";
         }
         echo "</div>";
     }
     echo "<button type='submit' class='btn btn-light w-100'>
-            <i class='fas {$formData['icon']} me-2'></i> {$formData['button']}
+            <i class='fas " . h($formData['icon']) . " me-2'></i> " . h($formData['button']) . "
           </button>
           </form>
           </div>
@@ -170,6 +189,7 @@ foreach ($forms as $formId => $formData) {
 </footer>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+const CSRF_TOKEN = <?= js(csrfToken()) ?>;
 const body = document.body;
 const header = document.querySelector('.header');
 const cards = document.querySelectorAll('.card');
@@ -183,41 +203,73 @@ function showToast(message, success = true) {
     const toast = document.createElement('div');
     toast.className = `toast align-items-center text-white bg-${success ? 'success' : 'danger'} border-0 show mb-2`;
     toast.role = 'alert';
-    toast.innerHTML = `<div class='d-flex'><div class='toast-body'>${message}</div><button type='button' class='btn-close btn-close-white me-2 m-auto' data-bs-dismiss='toast'></button></div>`;
+    toast.innerHTML = `<div class='d-flex'><div class='toast-body'></div><button type='button' class='btn-close btn-close-white me-2 m-auto' data-bs-dismiss='toast'></button></div>`;
+    toast.querySelector('.toast-body').textContent = message;
     toastContainer.appendChild(toast);
     setTimeout(() => toast.remove(), 4000);
 }
 
 // AJAX form handling
+// النماذج التي تغيّر قائمة الأعضاء تعيد تحميل الصفحة لتحديث القوائم
+const RELOAD_FORMS = ['formMember', 'formEdit', 'formDelete'];
 function handleAjax(formId) {
     const form = document.getElementById(formId);
+    if (!form) return;
     form.addEventListener('submit', function(e) {
         e.preventDefault();
         const formData = new FormData(form);
         fetch('save.php', {
             method: 'POST',
-            body: formData
+            body: formData,
+            credentials: 'same-origin',
+            headers: { 'X-CSRF-Token': CSRF_TOKEN, 'X-Requested-With': 'XMLHttpRequest' }
         })
-        .then(response => {
-            if (response.ok) {
-                showToast('✔️ تم الحفظ بنجاح');
+        .then(response => response.text().then(text => ({ ok: response.ok, text })))
+        .then(({ ok, text }) => {
+            if (ok) {
+                showToast('✔️ ' + text);
+                if (RELOAD_FORMS.includes(formId)) {
+                    setTimeout(() => window.location.reload(), 1000);
+                    return;
+                }
+                const dateInput = form.querySelector('[name="date"]');
+                const dateValue = dateInput ? dateInput.value : null;
                 form.reset();
-                 if (formId === 'formDelete') {
-                      form.querySelector('[name="name"]').selectedIndex = 0;
-                      form.querySelector('[name="delete_type"]').selectedIndex = 0;
-                 }
+                if (dateInput) dateInput.value = dateValue;
             } else {
-                response.text().then(text => {
-                    showToast(`❌ حدث خطأ: ${text}`, false);
-                });
+                showToast(`❌ ${text}`, false);
             }
-        });
+        })
+        .catch(() => showToast('❌ تعذر الاتصال بالخادم', false));
     });
 }
-['formMember', 'formExpense', 'formContribution', 'formDelete'].forEach(handleAjax);
+['formMember', 'formEdit', 'formExpense', 'formContribution', 'formDelete'].forEach(handleAjax);
 
-// Reset data with confirmation
+// Reset data with confirmation (POST + CSRF)
+function doReset() {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF_TOKEN);
+    fetch('reset.php', {
+        method: 'POST',
+        body: fd,
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(response => {
+        if (response.ok) {
+            showToast('✔️ تم إعادة ضبط البيانات بنجاح');
+            setTimeout(() => { window.location.href = 'index.php'; }, 2000);
+        } else {
+            response.text().then(text => showToast(`❌ حدث خطأ: ${text}`, false));
+        }
+    })
+    .catch(() => showToast('❌ تعذر الاتصال بالخادم', false));
+}
 resetButton.addEventListener('click', function() {
+    if (typeof Swal === 'undefined') {
+        if (confirm('هل أنت متأكد؟ سيتم مسح جميع البيانات ولا يمكن التراجع!')) doReset();
+        return;
+    }
     Swal.fire({
         title: 'هل أنت متأكد؟',
         text: 'هذا الإجراء سيؤدي إلى مسح جميع البيانات ولا يمكن التراجع عنه!',
@@ -228,23 +280,7 @@ resetButton.addEventListener('click', function() {
         confirmButtonText: '🔥 نعم، أعد ضبط كل شيء',
         cancelButtonText: '🚫 إلغاء'
     }).then((result) => {
-        if (result.isConfirmed) {
-            fetch('reset.php', {
-                method: 'POST'
-            })
-            .then(response => {
-                if (response.ok) {
-                    showToast('✔️ تم إعادة ضبط البيانات بنجاح');
-                    setTimeout(() => {
-                        window.location.href = 'index.php';
-                    }, 2000);
-                } else {
-                    response.text().then(text => {
-                       showToast(`❌ حدث خطأ: ${text}`, false);
-                    });
-                }
-            });
-        }
+        if (result.isConfirmed) doReset();
     });
 });
 

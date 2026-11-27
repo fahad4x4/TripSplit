@@ -1,37 +1,11 @@
 <?php
-// تحميل مكتبة TCPDF
-require_once __DIR__ . '/vendor/tecnickcom/tcpdf/tcpdf.php';
+require __DIR__ . '/auth.php';
+requirePdfLibrary();
 
-// تحميل الإعدادات والبيانات
-$config = require 'config.php';
-$data = json_decode(file_get_contents($config['data_file']), true);
-
-$expenses = $data['expenses'] ?? [];
-
-// دالة تجميع المصروفات اليومية مع ملخص تفصيلي للأنواع
-function dailyExpensesWithNotes(array $expenses): array {
-    $daily = [];
-    foreach ($expenses as $exp) {
-        $date = date('Y-m-d', strtotime($exp['date']));
-        $type = $exp['note'] ?? 'غير محدد';
-        $amount = $exp['amount'];
-        if (!isset($daily[$date])) {
-            $daily[$date] = [
-                'total'   => 0,
-                'details' => []
-            ];
-        }
-        $daily[$date]['total'] += $amount;
-        if (!isset($daily[$date]['details'][$type])) {
-            $daily[$date]['details'][$type] = 0;
-        }
-        $daily[$date]['details'][$type] += $amount;
-    }
-    ksort($daily);
-    return $daily;
-}
-
-$daily_expenses = dailyExpensesWithNotes($expenses);
+$config = appConfig();
+$data = loadData();
+$daily_expenses = dailyExpensesWithDetails($data['expenses']);
+$cur = h($config['currency']);
 
 // إنشاء كائن TCPDF
 $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
@@ -71,12 +45,12 @@ foreach ($daily_expenses as $date => $row) {
     // تفصيل الأنواع
     $details = '';
     foreach ($row['details'] as $type => $amount) {
-        $details .= '<div><span style="font-weight:bold;">' . htmlspecialchars($type) . ':</span> '
-                  . number_format($amount, 2) . ' ' . $config['currency'] . '</div>';
+        $details .= '<div><span style="font-weight:bold;">' . h($type) . ':</span> '
+                  . number_format($amount, 2) . ' ' . $cur . '</div>';
     }
     $html .= '<tr>
-                <td style="text-align: center; vertical-align:top;">' . $date . '</td>
-                <td style="text-align: center; vertical-align:top;">' . number_format($row['total'], 2) . ' ' . $config['currency'] . '</td>
+                <td style="text-align: center; vertical-align:top;">' . h($date) . '</td>
+                <td style="text-align: center; vertical-align:top;">' . number_format($row['total'], 2) . ' ' . $cur . '</td>
                 <td style="vertical-align:top;">' . $details . '</td>
               </tr>';
 }
@@ -90,5 +64,3 @@ $pdf->writeHTML($html, true, false, true, false, '');
 
 // تصدير ملف PDF
 $pdf->Output('تقرير_المصروفات_اليومية_المفصل.pdf', 'D');
-
-?>
