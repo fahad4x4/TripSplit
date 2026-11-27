@@ -1,98 +1,51 @@
 <?php
-session_start();
-if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-    header('Location: login.php');
-    exit();
-}
+require __DIR__ . '/auth.php';
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-require_once 'functions.php';
-$config = require 'config.php';
+$config = appConfig();
 $currency = $config['currency'];
-$exchange_rate = $config['exchange_rate_to_sar'];
+$exchange_rate = (float) $config['exchange_rate_to_sar'];
 
-$data = json_decode(file_get_contents($config['data_file']), true);
-
-$team = $data['team'] ?? [];
-$expenses = $data['expenses'] ?? [];
-$contributions = $data['contributions'] ?? [];
+$data = loadData();
+$team = $data['team'];
+$expenses = $data['expenses'];
+$contributions = $data['contributions'];
 
 $total = totalExpenses($expenses);
-$share = !empty($team) ? $total / count($team) : 0;
+$kitty = kittyBalance($expenses, $contributions);
 $balances = calculateBalances($team, $expenses, $contributions);
-
-// توليد معاملات التسوية
-$transactions = [];
-$surpluses = getSurpluses($balances);
-$deficits = getDeficits($balances);
-
-foreach ($deficits as $debtor => $dNet) {
-    foreach ($surpluses as $creditor => $cNet) {
-        if ($dNet == 0) break;
-        $pay = min(abs($dNet), $cNet);
-        if ($pay > 0) {
-            $transactions[] = [
-                'from' => $debtor,
-                'to' => $creditor,
-                'amount' => $pay
-            ];
-            $balances[$debtor]['net'] += $pay;
-            $balances[$creditor]['net'] -= $pay;
-            $balances[$debtor]['status'] = $balances[$debtor]['net'] > 0 ? 'فائض' : ($balances[$debtor]['net'] < 0 ? 'عجز' : 'متوازن');
-            $balances[$creditor]['status'] = $balances[$creditor]['net'] > 0 ? 'فائض' : ($balances[$creditor]['net'] < 0 ? 'عجز' : 'متوازن');
-            $deficits[$debtor] += $pay;
-            $surpluses[$creditor] -= $pay;
-            $dNet += $pay;
-        }
-    }
-}
+$settlement = computeSettlement($balances);
+$transactions = $settlement['transactions'];
 
 // حساب مجموع المصروفات لكل فئة
 $expensesByCategory = [];
 foreach ($expenses as $expense) {
-    $category = $expense['note'];
-    if (!isset($expensesByCategory[$category])) {
-        $expensesByCategory[$category] = 0;
-    }
-    $expensesByCategory[$category] += $expense['amount'];
+    $category = (string) ($expense['note'] ?? 'اخرى');
+    $expensesByCategory[$category] = ($expensesByCategory[$category] ?? 0) + (float) ($expense['amount'] ?? 0);
 }
 
-// التعديل الرئيسي هنا: تغيير شرط المشاركة من (جميع الأعضاء) إلى (مشاركة ثنائية أو أكثر)
+// تصنيف المصروفات: مشتركة (مشاركان أو أكثر) أو فردية
 $shared_expenses = [];
 $individual_expenses = [];
-
 foreach ($expenses as $exp) {
-    $participants_count = count($exp['participants']);
-    
-    // تغيير الشرط ليشمل المشاركات الثنائية أو أكثر
+    $parts = expenseParticipants($exp, $team);
+    $participants_count = count($parts);
     if ($participants_count >= 2) {
         $shared_expenses[] = $exp;
     } elseif ($participants_count == 1) {
-        $member = $exp['participants'][0];
+        $member = $parts[0];
         if (!isset($individual_expenses[$member])) {
-            $individual_expenses[$member] = [
-                'total' => 0,
-                'count' => 0
-            ];
+            $individual_expenses[$member] = ['total' => 0, 'count' => 0];
         }
-        $individual_expenses[$member]['total'] += $exp['amount'];
+        $individual_expenses[$member]['total'] += (float) $exp['amount'];
         $individual_expenses[$member]['count']++;
     }
 }
 
-$total_shared = array_sum(array_column($shared_expenses, 'amount'));
+$total_shared = array_sum(array_map(function ($e) { return (float) ($e['amount'] ?? 0); }, $shared_expenses));
 $shared_count = count($shared_expenses);
-
-$results = [
-    'total' => $total,
-    'share' => $share,
-    'balances' => $balances,
-    'transactions' => $transactions,
-    'participants' => $team
-];
+$cur = h($currency);
+$sarIcon = '<img src="https://alghathbar.com/trip/icons/Saudi_Riyal_Symbol.svg" width="14" alt="ريال سعودي">';
+$statusBadge = [STATUS_CREDIT => 'bg-success', STATUS_DEBIT => 'bg-danger', STATUS_BALANCED => 'bg-secondary'];
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -147,31 +100,41 @@ $results = [
                 <div class="card-body">
                     <div class="row text-center g-3">
                         <!-- مجموع القطة -->
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <div class="p-3 border rounded-3 shadow-sm bg-light">
                                 <div class="text-muted small">مجموع القطة</div>
                                 <div class="h5 fw-bold">
-                                    <?= number_format(totalContributions($contributions), 2) ?> <?= $config['currency'] ?>
+                                    <?= number_format(totalContributions($contributions), 2) ?> <?= $cur ?>
                                 </div>
                                 <a href="contributions.php" class="btn btn-sm btn-primary mt-2">عرض التفاصيل</a>
                             </div>
                         </div>
                         <!-- مجموع المصروفات -->
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <div class="p-3 border rounded-3 shadow-sm bg-light">
                                 <div class="text-muted small">مجموع المصروفات</div>
                                 <div class="h5 fw-bold">
-                                    <?= number_format($total, 2) ?> <?= $config['currency'] ?>
+                                    <?= number_format($total, 2) ?> <?= $cur ?>
                                 </div>
                                 <a href="expenses.php" class="btn btn-sm btn-primary mt-2">عرض التفاصيل</a>
                             </div>
                         </div>
+                        <!-- رصيد الصندوق -->
+                        <div class="col-md-3">
+                            <div class="p-3 border rounded-3 shadow-sm bg-light">
+                                <div class="text-muted small">رصيد الصندوق (القطة − مصروفات الصندوق)</div>
+                                <div class="h5 fw-bold <?= $kitty['balance'] < 0 ? 'text-danger' : 'text-success' ?>">
+                                    <?= number_format($kitty['balance'], 2) ?> <?= $cur ?>
+                                </div>
+                                <div class="text-muted small">صُرف من الصندوق: <?= number_format($kitty['spent'], 2) ?> <?= $cur ?></div>
+                            </div>
+                        </div>
                         <!-- مجموع العجز -->
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <div class="p-3 border rounded-3 shadow-sm bg-light">
                                 <div class="text-muted small">مجموع العجز</div>
                                 <div class="h5 fw-bold text-danger">
-                                    <?= number_format(sumDeficits($balances), 2) ?> <?= $config['currency'] ?>
+                                    <?= number_format(sumDeficits($balances), 2) ?> <?= $cur ?>
                                 </div>
                             </div>
                         </div>
@@ -196,7 +159,7 @@ $results = [
                                             <div class="p-3 border rounded-3 shadow-sm text-center bg-light">
                                                 <div class="text-muted small"><?= htmlspecialchars($category) ?></div>
                                                 <div class="h5 fw-bold">
-                                                    <?= number_format($amount, 2) ?> <?= $config['currency'] ?>
+                                                    <?= number_format($amount, 2) ?> <?= $cur ?>
                                                 </div>
                                                 <div class="text-muted small">
                                                     ≈ <?= number_format($amount * $exchange_rate, 2) ?>
@@ -239,9 +202,10 @@ $results = [
                                 <div class="participant-card">
                                     <div>
                                         <div class="fw-bold"><?= htmlspecialchars($participant) ?></div>
-                                        <div class="text-muted small">#<?= $index + 1 ?> – <?= number_format($balances[$participant]['net'] ?? 0, 2) ?> <?= $config['currency'] ?></div>
+                                        <div class="text-muted small">#<?= $index + 1 ?> – <?= number_format($balances[$participant]['net'] ?? 0, 2) ?> <?= $cur ?></div>
                                     </div>
-                                    <span class="badge bg-success">نشط</span>
+                                    <?php $st = $balances[$participant]['status'] ?? STATUS_BALANCED; ?>
+                                    <span class="badge <?= $statusBadge[$st] ?? 'bg-secondary' ?>"><?= h($st) ?></span>
                                 </div>
                             <?php endforeach; ?>
                         </div>
@@ -265,7 +229,7 @@ $results = [
                             <div class="p-3 border rounded-3 shadow-sm text-center bg-light">
                                 <div class="text-muted small">المصروفات المشتركة</div>
                                 <div class="h4 fw-bold text-primary">
-                                    <?= number_format($total_shared, 2) ?> <?= $currency ?>
+                                    <?= number_format($total_shared, 2) ?> <?= $cur ?>
                                 </div>
                                 <div class="small text-muted">
                                     ≈ <?= number_format($total_shared * $exchange_rate, 2) ?> 
@@ -273,25 +237,25 @@ $results = [
                                 </div>
                                 <div class="mt-2 small">
                                     <i class="fas fa-users me-1"></i>
-                                    <?= $shared_count ?> عملية
+                                    <?= (int) $shared_count ?> عملية
                                 </div>
                             </div>
                         </div>
                         <!-- المصروفات الفردية -->
-                        <?php foreach ($individual_expenses as $member => $data): ?>
+                        <?php foreach ($individual_expenses as $member => $info): ?>
                         <div class="col-md-4">
                             <div class="p-3 border rounded-3 shadow-sm text-center bg-light">
                                 <div class="text-muted small">مصروفات <?= htmlspecialchars($member) ?> المنفردة</div>
                                 <div class="h4 fw-bold text-success">
-                                    <?= number_format($data['total'], 2) ?> <?= $currency ?>
+                                    <?= number_format($info['total'], 2) ?> <?= $cur ?>
                                 </div>
                                 <div class="small text-muted">
-                                    ≈ <?= number_format($data['total'] * $exchange_rate, 2) ?> 
+                                    ≈ <?= number_format($info['total'] * $exchange_rate, 2) ?> 
                                     <img src="https://alghathbar.com/trip/icons/Saudi_Riyal_Symbol.svg" width="14">
                                 </div>
                                 <div class="mt-2 small">
                                     <i class="fas fa-user-tag me-1"></i>
-                                    <?= $data['count'] ?> عملية
+                                    <?= (int) $info['count'] ?> عملية
                                 </div>
                             </div>
                         </div>
@@ -324,7 +288,7 @@ $results = [
                                     </div>
                                     <div class="d-flex justify-content-between align-items-center">
                                         <div>
-                                            <div class="fs-5 fw-bold text-dark"><?= number_format($t['amount'], 2) ?> <?= $config['currency'] ?></div>
+                                            <div class="fs-5 fw-bold text-dark"><?= number_format($t['amount'], 2) ?> <?= $cur ?></div>
                                             <div class="text-muted small">
                                                 ≈ <?= number_format($t['amount'] * $exchange_rate, 2) ?>
                                                 <img src="https://alghathbar.com/trip/icons/Saudi_Riyal_Symbol.svg" width="14" alt="ريال سعودي">
@@ -338,10 +302,30 @@ $results = [
                             </div>
                             <?php endforeach; ?>
                         </div>
-                    <?php else: ?>
+                    <?php elseif (empty($settlement['kitty_refunds']) && empty($settlement['kitty_dues'])): ?>
                         <div class="alert alert-info d-flex align-items-center">
                             <i class="fas fa-balance-scale me-2"></i>
                             جميع الحسابات متوازنة
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($kitty['balance'] > 0): ?>
+                        <div class="alert alert-success mt-4 mb-0">
+                            <i class="fas fa-piggy-bank me-2"></i>
+                            متبقٍ في <?= h(KITTY) ?>: <strong><?= number_format($kitty['balance'], 2) ?> <?= $cur ?></strong>
+                            — يُعاد للمساهمين (خارج التحويلات بين الأعضاء):
+                            <?php foreach ($settlement['kitty_refunds'] as $name => $amt): ?>
+                                <span class="badge bg-success ms-1"><?= h($name) ?>: <?= number_format($amt, 2) ?></span>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php elseif ($kitty['balance'] < 0): ?>
+                        <div class="alert alert-warning mt-4 mb-0">
+                            <i class="fas fa-exclamation-circle me-2"></i>
+                            عجز في <?= h(KITTY) ?>: <strong><?= number_format(abs($kitty['balance']), 2) ?> <?= $cur ?></strong>
+                            — يغطيه الأعضاء بإضافة قطة (خارج التحويلات بين الأعضاء):
+                            <?php foreach ($settlement['kitty_dues'] as $name => $amt): ?>
+                                <span class="badge bg-danger ms-1"><?= h($name) ?>: <?= number_format($amt, 2) ?></span>
+                            <?php endforeach; ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -433,9 +417,9 @@ $results = [
             new Chart(ctx, {
                 type: 'doughnut',
                 data: {
-                    labels: <?= json_encode(array_keys($expensesByCategory)) ?>,
+                    labels: <?= js(array_keys($expensesByCategory)) ?>,
                     datasets: [{
-                        data: <?= json_encode(array_values($expensesByCategory)) ?>,
+                        data: <?= js(array_values($expensesByCategory)) ?>,
                         backgroundColor: [
                             '#2A5C8D', '#F2A950', '#4CAF50', 
                             '#FFC107', '#E74C3C', '#6f42c1'
@@ -449,7 +433,7 @@ $results = [
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return `${context.label}: ${context.formattedValue} <?= $currency ?>`;
+                                    return `${context.label}: ${context.formattedValue} ` + <?= js($currency) ?>;
                                 }
                             }
                         }

@@ -1,0 +1,13 @@
+# بيانات الرحلة الحقيقية والنسخ الاحتياطية (لا تُرفع)
+data/expenses.json
+data/backups/
+data/.lock
+# ملفات قديمة قبل الترحيل إلى data/
+/expenses.json
+/backups/
+
+# كلمة المرور والإعدادات الخاصة
+config.local.php
+
+# Composer
+vendor/

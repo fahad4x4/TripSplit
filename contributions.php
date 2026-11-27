@@ -1,17 +1,13 @@
 <?php
-session_start();
-if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-    header('Location: login.php');
-    exit();
-}
+require __DIR__ . '/auth.php';
 
-require_once 'functions.php';
-$config = require 'config.php';
+$config = appConfig();
 $currency = $config['currency'];
-$exchange_rate = $config['exchange_rate_to_sar'];
+$exchange_rate = (float) $config['exchange_rate_to_sar'];
+$cur = h($currency);
 
-$data = json_decode(file_get_contents($config['data_file']), true);
-$contributions = $data['contributions'] ?? [];
+$data = loadData();
+$contributions = $data['contributions'];
 ?>
 
 <!DOCTYPE html>
@@ -47,7 +43,7 @@ $contributions = $data['contributions'] ?? [];
         <div class="card">
             <div class="card-header bg-teal contributions text-white">
                 <i class="fas fa-hand-holding-usd me-2"></i>سجل دفعات القطة
-                <span class="badge bg-light text-dark float-start"><?= count($contributions) ?> مساهمات</span>
+                <span class="badge bg-light text-dark float-start"><?= (int) count($contributions) ?> مساهمات</span>
             </div>
             <div class="card-body">
                 <?php if (!empty($contributions)): ?>
@@ -56,14 +52,14 @@ $contributions = $data['contributions'] ?? [];
                         <div class="col-12 col-md-6">
                             <div class="p-3 border rounded-3 shadow-sm d-flex flex-column gap-2 bg-light" style="background-color: #fef6fd;">
                                 <div class="d-flex justify-content-between align-items-center">
-                                    <div class="fw-bold"><?= htmlspecialchars($contrib['name']) ?></div>
-                                    <div class="text-muted small"><?= date('Y-m-d', strtotime($contrib['date'])) ?></div>
+                                    <div class="fw-bold"><?= h($contrib['name'] ?? '') ?></div>
+                                    <div class="text-muted small"><?= h(safeDate($contrib['date'] ?? '')) ?></div>
                                 </div>
                                 <div class="d-flex justify-content-between align-items-end">
                                     <div>
-                                        <span class="fw-bold"><?= number_format($contrib['amount'], 2) ?> <?= $currency ?></span>
+                                        <span class="fw-bold"><?= number_format((float) $contrib['amount'], 2) ?> <?= $cur ?></span>
                                         <div class="text-muted small">
-                                            ≈ <?= number_format($contrib['amount'] * $exchange_rate, 2) ?>
+                                            ≈ <?= number_format((float) $contrib['amount'] * $exchange_rate, 2) ?>
                                             <img src="https://alghathbar.com/trip/icons/Saudi_Riyal_Symbol.svg" alt="ريال سعودي" width="14">
                                         </div>
                                     </div>

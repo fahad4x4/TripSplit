@@ -1,0 +1,12 @@
+{
+    "name": "fahad4x4/tripsplit",
+    "description": "TripSplit - Arabic (RTL) group trip expense splitter with a shared kitty, JSON storage and PDF reports.",
+    "type": "project",
+    "require": {
+        "php": ">=7.4",
+        "tecnickcom/tcpdf": "^6.6"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}
