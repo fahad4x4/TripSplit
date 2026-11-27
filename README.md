@@ -190,7 +190,7 @@ The tests cover a kitty‑only trip, personal payments, an expense with 2 of 3 p
 
 ## License
 
-No license file is included in this repository. All rights are reserved by the author unless a license is added.
+Released under the [MIT License](LICENSE). Copyright © 2026 Fahad ALGhathbar (فهد الغثبر).
 
 ## Author
 
@@ -381,7 +381,7 @@ php tests/test_logic.php
 
 ## الترخيص
 
-لا يتضمن المستودع ملف ترخيص حالياً، فجميع الحقوق محفوظة للمطور ما لم يُضف ترخيص.
+المشروع منشور برخصة [MIT](LICENSE). حقوق النشر © 2026 فهد الغثبر (Fahad ALGhathbar).
 
 ## المطور
 
